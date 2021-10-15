@@ -41,9 +41,9 @@ import org.scalasteward.core.update.artifact.{ArtifactMigrationsFinder, Artifact
 import org.scalasteward.core.update.{FilterAlg, PruningAlg, UpdateAlg}
 import org.scalasteward.core.util._
 import org.scalasteward.core.util.uri._
+import org.scalasteward.core.vcs._
 import org.scalasteward.core.vcs.data.Repo
 import org.scalasteward.core.vcs.github.{GitHubAppApiAlg, GitHubAuthAlg}
-import org.scalasteward.core.vcs.{VCSApiAlg, VCSExtraAlg, VCSRepoAlg, VCSSelection}
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
@@ -76,15 +76,18 @@ final class Context[F[_]](implicit
 object Context {
   def step0[F[_]](args: Cli.Args)(implicit F: Async[F]): Resource[F, Context[F]] =
     for {
-      _ <- Resource.unit[F]
-      config = Config.from(args)
       logger <- Resource.eval(Slf4jLogger.fromName[F]("org.scalasteward.core"))
-      client <- OkHttpBuilder.withDefaultClient[F].flatMap(_.resource)
-      fileAlg = FileAlg.create[F](logger, F)
-      processAlg = ProcessAlg.create[F](config.processCfg)(logger, F)
-      workspaceAlg = WorkspaceAlg.create[F](config)(fileAlg, logger, F)
-      context <-
-        Resource.eval(step1[F](config)(client, fileAlg, logger, processAlg, workspaceAlg, F))
+      _ <- Resource.eval(printBanner(logger))
+      config = Config.from(args)
+      fileAlg = FileAlg.create(logger, F)
+      processAlg = ProcessAlg.create(config.processCfg)(logger, F)
+      workspaceAlg = WorkspaceAlg.create(config)(fileAlg, logger, F)
+      vcsUser <- Resource.eval(config.vcsUser(processAlg, workspaceAlg, F))
+      client <- OkHttpBuilder
+        .withDefaultClient[F]
+        .flatMap(_.resource)
+        .map(VCSClient(config.vcsCfg, vcsUser))
+      context <- Resource.eval(step1(config)(client, fileAlg, logger, processAlg, workspaceAlg, F))
     } yield context
 
   def step1[F[_]](config: Config)(implicit
@@ -96,8 +99,7 @@ object Context {
       F: Async[F]
   ): F[Context[F]] =
     for {
-      _ <- printBanner[F]
-      vcsUser <- config.vcsUser[F]
+      _ <- F.unit
       artifactMigrationsLoader0 = new ArtifactMigrationsLoader[F]
       artifactMigrationsFinder0 <- artifactMigrationsLoader0.createFinder(config.artifactCfg)
       scalafixMigrationsLoader0 = new ScalafixMigrationsLoader[F]
@@ -128,7 +130,7 @@ object Context {
       implicit val httpJsonClient: HttpJsonClient[F] = new HttpJsonClient[F]
       implicit val repoCacheRepository: RepoCacheRepository[F] =
         new RepoCacheRepository[F](repoCacheStore)
-      implicit val vcsApiAlg: VCSApiAlg[F] = new VCSSelection[F](config, vcsUser).vcsApiAlg
+      implicit val vcsApiAlg: VCSApiAlg[F] = new VCSSelection[F](config).vcsApiAlg
       implicit val vcsRepoAlg: VCSRepoAlg[F] = new VCSRepoAlg[F](config)
       implicit val vcsExtraAlg: VCSExtraAlg[F] = VCSExtraAlg.create[F](config.vcsCfg)
       implicit val pullRequestRepository: PullRequestRepository[F] =
@@ -155,7 +157,7 @@ object Context {
       new Context[F]
     }
 
-  private def printBanner[F[_]](implicit logger: Logger[F]): F[Unit] = {
+  private def printBanner[F[_]](logger: Logger[F]): F[Unit] = {
     val banner =
       """|  ____            _         ____  _                             _
          | / ___|  ___ __ _| | __ _  / ___|| |_ _____      ____ _ _ __ __| |

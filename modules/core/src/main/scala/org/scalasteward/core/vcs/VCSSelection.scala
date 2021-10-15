@@ -17,48 +17,32 @@
 package org.scalasteward.core.vcs
 
 import cats.MonadThrow
-import org.http4s.Header
+import cats.syntax.all._
 import org.scalasteward.core.application.Config
 import org.scalasteward.core.util.HttpJsonClient
 import org.scalasteward.core.vcs.VCSType.{Bitbucket, BitbucketServer, GitHub, GitLab}
 import org.scalasteward.core.vcs.bitbucket.BitbucketApiAlg
 import org.scalasteward.core.vcs.bitbucketserver.BitbucketServerApiAlg
-import org.scalasteward.core.vcs.data.AuthenticatedUser
 import org.scalasteward.core.vcs.github.GitHubApiAlg
 import org.scalasteward.core.vcs.gitlab.GitLabApiAlg
-import org.typelevel.ci._
 import org.typelevel.log4cats.Logger
 
-final class VCSSelection[F[_]](config: Config, user: AuthenticatedUser)(implicit
+final class VCSSelection[F[_]](config: Config)(implicit
     client: HttpJsonClient[F],
     logger: Logger[F],
     F: MonadThrow[F]
 ) {
   private def gitHubApiAlg: GitHubApiAlg[F] =
-    new GitHubApiAlg[F](config.vcsCfg.apiHost, _ => github.authentication.addCredentials(user))
+    new GitHubApiAlg[F](config.vcsCfg.apiHost, _ => _.pure[F])
 
   private def gitLabApiAlg: GitLabApiAlg[F] =
-    new GitLabApiAlg[F](
-      config.vcsCfg,
-      config.gitLabCfg,
-      _ => gitlab.authentication.addCredentials(user)
-    )
+    new GitLabApiAlg[F](config.vcsCfg, config.gitLabCfg, _ => _.pure[F])
 
   private def bitbucketApiAlg: BitbucketApiAlg[F] =
-    new BitbucketApiAlg(config.vcsCfg, _ => bitbucket.authentication.addCredentials(user))
+    new BitbucketApiAlg(config.vcsCfg, _ => _.pure[F])
 
-  private def bitbucketServerApiAlg: BitbucketServerApiAlg[F] = {
-    // Bypass the server-side XSRF check, see
-    // https://github.com/scala-steward-org/scala-steward/pull/1863#issuecomment-754538364
-    val xAtlassianToken = Header.Raw(ci"X-Atlassian-Token", "no-check")
-
-    new BitbucketServerApiAlg[F](
-      config.vcsCfg.apiHost,
-      config.bitbucketServerCfg,
-      _ =>
-        req => bitbucket.authentication.addCredentials(user).apply(req.putHeaders(xAtlassianToken))
-    )
-  }
+  private def bitbucketServerApiAlg: BitbucketServerApiAlg[F] =
+    new BitbucketServerApiAlg[F](config.vcsCfg.apiHost, config.bitbucketServerCfg, _ => _.pure[F])
 
   def vcsApiAlg: VCSApiAlg[F] =
     config.vcsCfg.tpe match {
