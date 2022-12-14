@@ -82,6 +82,18 @@ class VersionScannerTest extends FunSuite {
     assertEquals(obtained, expected)
   }
 
+  test("simple val, 2") {
+    val d = "org.typelevel".g % "cats-core".a % "2.9.0"
+    val content =
+      s"""object Versions {
+         |  val scalJsNative =
+         |   Option(getFoo).getOrElse("${d.version}")
+         |}""".stripMargin
+    val obtained = VersionScanner.findPositions(d.version, content)
+    val expected = List(ScalaVal(Substring.Position(68, d.version.value), "", "scalJsNative"))
+    assertEquals(obtained, expected)
+  }
+
   test("commented val") {
     val d = "org.typelevel".g % "cats-core".a % "2.9.0"
     val content = s"""object Versions {

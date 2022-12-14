@@ -28,6 +28,7 @@ object VersionScanner {
       findMillDependency(version, content) ++
       findMavenDependency(version, content) ++
       findScalaVal(version, content) ++
+      findScalaValWithScalameta(version, content) ++
       findUnclassified(version, content)
     it.filterNot(p => isInside(p.version.start, offRegions)).distinctBy(_.version.start).toList
   }
@@ -107,4 +108,25 @@ object VersionScanner {
       }
     }
   }
+
+  import scala.meta._
+
+  private def findScalaValWithScalameta(version: Version, content: String): Iterator[ScalaVal] =
+    dialects.Sbt1(content).parse[Source].toOption match {
+      case Some(source) =>
+        val r = source.collect { case Defn.Val(_, pats, _, d) =>
+          d.collect { case lit @ Lit(v) if v.toString == version.value => lit.pos }.headOption.map {
+            pos =>
+              ScalaVal(
+                Substring.Position(pos.start + 1, version.value),
+                "",
+                pats.headOption.map(_.toString()).getOrElse("")
+              )
+          }
+        }.flatten
+        locally(r.iterator)
+//        Iterator.empty
+      case None => Iterator.empty
+    }
+
 }

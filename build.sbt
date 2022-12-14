@@ -93,6 +93,7 @@ lazy val core = myCrossProject("core")
       Dependencies.catsCore,
       Dependencies.catsEffect,
       Dependencies.catsParse,
+      "org.scalameta" %% "scalameta" % "4.6.0",
       Dependencies.circeConfig,
       Dependencies.circeGeneric,
       Dependencies.circeGenericExtras,
